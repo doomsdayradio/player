@@ -1,0 +1,29 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build portable Linux (Debian WSL)",
+			"type": "shell",
+			"command": "wsl",
+			"args": [
+				"-d",
+				"Debian",
+				"--exec",
+				"env",
+				"PATH=/home/fab1/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+				"CARGO_TARGET_DIR=/home/fab1/.cache/doomsday-radio-target",
+				"/home/fab1/.cargo/bin/cargo",
+				"build",
+				"--locked",
+				"--release",
+				"--manifest-path",
+				"/mnt/c/Users/FrommFabian/Code/doomsday/player/Cargo.toml"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "build"
+		}
+	]
+}

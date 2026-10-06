@@ -1,0 +1,23 @@
+[package]
+name = "doomsday-radio"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+description = "A tiny native player exclusively for Doomsday Radio"
+
+[dependencies]
+eframe = { version = "0.31.1", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+egui-phosphor = { version = "0.9", default-features = false, features = ["regular"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+rodio = { version = "0.20.1", default-features = false }
+rustfft = "6.2"
+symphonia = { version = "0.5.4", default-features = false, features = ["mp3"] }
+tokio = { version = "1", features = ["rt", "time", "macros"] }
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"

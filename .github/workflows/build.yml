@@ -1,0 +1,159 @@
+name: Portable builds
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: "1.99.0"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Rust toolchain
+        run: rustup toolchain install $env:RUST_TOOLCHAIN --profile minimal --component rustfmt --component clippy
+      - name: Cargo cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-x64-rust-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: windows-x64-rust-${{ env.RUST_TOOLCHAIN }}-
+      - name: Format, tests and lint
+        shell: pwsh
+        run: |
+          cargo "+$env:RUST_TOOLCHAIN" fmt --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo "+$env:RUST_TOOLCHAIN" test --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo "+$env:RUST_TOOLCHAIN" clippy --locked --all-targets -- -D warnings
+          exit $LASTEXITCODE
+      - name: Single EXE
+        shell: pwsh
+        run: |
+          cargo "+$env:RUST_TOOLCHAIN" build --locked --release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Copy-Item target/release/doomsday-radio.exe dist/doomsday-radio-windows-x64.exe
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: doomsday-radio-windows-x64
+          path: dist/doomsday-radio-windows-x64.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  debian:
+    runs-on: ubuntu-latest
+    container: rust:1.99.0-bookworm
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Desktop build libraries
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends libasound2-dev libx11-dev libxi-dev libxrandr-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev pkg-config
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Cargo cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            /usr/local/cargo/registry
+            /usr/local/cargo/git
+            target
+          key: debian12-x64-rust-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: debian12-x64-rust-${{ env.RUST_TOOLCHAIN }}-
+      - name: Tests
+        run: cargo test --locked --release
+      - name: Single Linux executable and portable archive
+        run: |
+          cargo build --locked --release
+          linkage="$(ldd -r target/release/doomsday-radio)"
+          printf '%s\n' "$linkage"
+          if grep -E 'not found|undefined symbol' <<< "$linkage"; then exit 1; fi
+          install -Dm755 target/release/doomsday-radio dist/doomsday-radio-linux-x64
+          tar -C dist -czf dist/doomsday-radio-linux-x64.tar.gz doomsday-radio-linux-x64
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: doomsday-radio-linux-x64
+          path: dist/doomsday-radio-linux-x64.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  fedora:
+    name: Fedora library compatibility
+    needs: debian
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Desktop runtime libraries
+        run: dnf install -y --setopt=install_weak_deps=False alsa-lib libX11 libXi libXrandr libxkbcommon libwayland-client libwayland-cursor libwayland-egl mesa-libGL mesa-libEGL tar
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: doomsday-radio-linux-x64
+          path: dist
+      - name: Check the Debian-built binary on Fedora
+        run: |
+          tar -C dist -xzf dist/doomsday-radio-linux-x64.tar.gz
+          test -x dist/doomsday-radio-linux-x64
+          linkage="$(ldd -r dist/doomsday-radio-linux-x64)"
+          printf '%s\n' "$linkage"
+          if grep -E 'not found|undefined symbol' <<< "$linkage"; then exit 1; fi
+
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Rust toolchain
+        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --target aarch64-apple-darwin --target x86_64-apple-darwin
+      - name: Cargo cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macos-${{ runner.arch }}-rust-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: macos-${{ runner.arch }}-rust-${{ env.RUST_TOOLCHAIN }}-
+      - name: Native tests
+        run: cargo "+$RUST_TOOLCHAIN" test --locked --release
+      - name: Single universal macOS executable
+        run: |
+          cargo "+$RUST_TOOLCHAIN" build --locked --release --target aarch64-apple-darwin
+          cargo "+$RUST_TOOLCHAIN" build --locked --release --target x86_64-apple-darwin
+          mkdir -p dist
+          lipo -create target/aarch64-apple-darwin/release/doomsday-radio target/x86_64-apple-darwin/release/doomsday-radio -output dist/doomsday-radio-macos
+          codesign --force --sign - dist/doomsday-radio-macos
+          lipo -info dist/doomsday-radio-macos
+          codesign --verify --verbose dist/doomsday-radio-macos
+          tar -C dist -czf dist/doomsday-radio-macos-universal.tar.gz doomsday-radio-macos
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: doomsday-radio-macos-universal
+          path: dist/doomsday-radio-macos-universal.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
