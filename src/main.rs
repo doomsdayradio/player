@@ -331,7 +331,7 @@ impl eframe::App for RadioApp {
                     ui.spacing_mut().slider_width = slider_width;
                     let changed = ui
                         .add(egui::Slider::new(&mut self.volume, 0.0..=1.0).show_value(false))
-                        .on_hover_text("Lautstaerke")
+                        .on_hover_text("Lautstärke")
                         .changed();
                     if changed {
                         self.muted = false;

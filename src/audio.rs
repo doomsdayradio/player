@@ -271,7 +271,7 @@ fn play_stream(session: Arc<Session>) -> Result<(), String> {
         let spec = *decoded.spec();
         if let Some(previous) = specification {
             if spec != previous {
-                return Err("Audioformat geaendert".into());
+                return Err("Audioformat geändert".into());
             }
         } else {
             specification = Some(spec);
