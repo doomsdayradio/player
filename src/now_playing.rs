@@ -173,7 +173,8 @@ impl Latest {
         self.time = time;
         self.ids.insert(id.to_owned());
         self.cursor = Some(id.to_owned());
-        Ok(Some(message.trim().to_owned()))
+        let title = message.split_once('|').map_or(message, |(_, title)| title);
+        Ok(Some(title.trim().to_owned()))
     }
 }
 
@@ -343,6 +344,22 @@ mod tests {
             "time": time, "message": text,
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn timestamp_prefix_is_removed_at_the_first_separator() {
+        let mut latest = Latest::new("doomsday");
+        let text = "2026-10-07T11:38:16Z | Alex-Productions - Rap Fast Commercial _ Yep.mp3";
+        assert_eq!(
+            latest.accept(&message("title", 30, text)).unwrap(),
+            Some("Alex-Productions - Rap Fast Commercial _ Yep.mp3".into())
+        );
+        assert_eq!(
+            latest
+                .accept(&message("next", 31, "timestamp| Artist | Song.mp3 "))
+                .unwrap(),
+            Some("Artist | Song.mp3".into())
+        );
     }
 
     #[test]
