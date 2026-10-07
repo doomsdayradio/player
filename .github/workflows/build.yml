@@ -38,9 +38,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: windows-x64-rust-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: windows-x64-rust-${{ env.RUST_TOOLCHAIN }}-
+          key: windows-registry-x64-rust-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: windows-registry-x64-rust-${{ env.RUST_TOOLCHAIN }}-
       - name: Format, tests and lint
         shell: pwsh
         run: |
@@ -67,6 +66,8 @@ jobs:
           exit $LASTEXITCODE
       - name: Single EXE
         shell: pwsh
+        env:
+          DOOMSDAY_EMBEDDED_NTFY_TOKEN: ${{ github.event_name != 'pull_request' && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/v')) && secrets.NTFY_TOKEN || '' }}
         run: |
           cargo "+$env:RUST_TOOLCHAIN" build --locked --release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -159,12 +160,13 @@ jobs:
           path: |
             /usr/local/cargo/registry
             /usr/local/cargo/git
-            target
-          key: debian12-x64-rust-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: debian12-x64-rust-${{ env.RUST_TOOLCHAIN }}-
+          key: debian12-registry-x64-rust-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: debian12-registry-x64-rust-${{ env.RUST_TOOLCHAIN }}-
       - name: Tests
         run: cargo test --locked --release
       - name: Single Linux executable and portable archive
+        env:
+          DOOMSDAY_EMBEDDED_NTFY_TOKEN: ${{ github.event_name != 'pull_request' && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/v')) && secrets.NTFY_TOKEN || '' }}
         run: |
           cargo build --locked --release
           linkage="$(ldd -r target/release/doomsday-radio)"
@@ -337,12 +339,13 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: macos-${{ runner.arch }}-rust-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: macos-${{ runner.arch }}-rust-${{ env.RUST_TOOLCHAIN }}-
+          key: macos-registry-${{ runner.arch }}-rust-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: macos-registry-${{ runner.arch }}-rust-${{ env.RUST_TOOLCHAIN }}-
       - name: Native tests
         run: cargo "+$RUST_TOOLCHAIN" test --locked --release
       - name: Universal macOS app with icon
+        env:
+          DOOMSDAY_EMBEDDED_NTFY_TOKEN: ${{ github.event_name != 'pull_request' && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/v')) && secrets.NTFY_TOKEN || '' }}
         run: |
           cargo "+$RUST_TOOLCHAIN" build --locked --release --target aarch64-apple-darwin
           cargo "+$RUST_TOOLCHAIN" build --locked --release --target x86_64-apple-darwin

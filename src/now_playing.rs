@@ -45,6 +45,21 @@ impl Configuration {
             .unwrap_or_else(|| fallback.to_owned())
     }
 
+    fn token(
+        runtime: Option<String>,
+        legacy: Option<String>,
+        embedded: Option<&str>,
+    ) -> Option<String> {
+        runtime
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| legacy.filter(|value| !value.trim().is_empty()))
+            .or_else(|| {
+                embedded
+                    .filter(|value| !value.trim().is_empty())
+                    .map(str::to_owned)
+            })
+    }
+
     fn parse(server: &str, topic: &str) -> Result<Self, String> {
         let mut url =
             reqwest::Url::parse(server.trim()).map_err(|_| "NTFY_URL ist ungültig".to_string())?;
@@ -194,8 +209,11 @@ fn process_chunk(
 
 fn client() -> Result<reqwest::Client, String> {
     let mut headers = reqwest::header::HeaderMap::new();
-    if let Ok(token) = std::env::var("NTFY_TOKEN").or_else(|_| std::env::var("DOOMSDAY_NTFY_TOKEN"))
-    {
+    if let Some(token) = Configuration::token(
+        std::env::var("NTFY_TOKEN").ok(),
+        std::env::var("DOOMSDAY_NTFY_TOKEN").ok(),
+        option_env!("DOOMSDAY_EMBEDDED_NTFY_TOKEN"),
+    ) {
         let mut value = HeaderValue::from_str(&format!("Bearer {}", token.trim()))
             .map_err(|_| "NTFY_TOKEN ist ungültig".to_string())?;
         value.set_sensitive(true);
@@ -288,6 +306,36 @@ async fn listen(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_tokens_override_the_embedded_read_token() {
+        assert_eq!(
+            Configuration::token(
+                Some("local".into()),
+                Some("legacy".into()),
+                Some("embedded")
+            ),
+            Some("local".into())
+        );
+        assert_eq!(
+            Configuration::token(None, Some("legacy".into()), Some("embedded")),
+            Some("legacy".into())
+        );
+        assert_eq!(
+            Configuration::token(None, None, Some("embedded")),
+            Some("embedded".into())
+        );
+    }
+
+    #[test]
+    fn empty_tokens_fall_back_or_allow_anonymous_access() {
+        assert_eq!(
+            Configuration::token(Some(" ".into()), Some("".into()), Some("embedded")),
+            Some("embedded".into())
+        );
+        assert_eq!(Configuration::token(None, None, Some(" ")), None);
+        assert_eq!(Configuration::token(None, None, None), None);
+    }
 
     fn message(id: &str, time: u64, text: &str) -> Vec<u8> {
         serde_json::to_vec(&serde_json::json!({
