@@ -1,6 +1,6 @@
 [package]
 name = "doomsday-radio"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
 rust-version = "1.88"
 description = "A tiny native player exclusively for Doomsday Radio"

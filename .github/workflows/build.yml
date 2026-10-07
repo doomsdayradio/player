@@ -340,7 +340,7 @@ jobs:
           iconutil -c icns "$iconset" -o "$app/Contents/Resources/doomsday-radio.icns"
           version="$(cargo "+$RUST_TOOLCHAIN" metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "doomsday-radio") | .version')"
           plist="$app/Contents/Info.plist"
-          plutil -create xml "$plist"
+          plutil -create xml1 "$plist"
           plutil -insert CFBundleName -string 'Doomsday Radio' "$plist"
           plutil -insert CFBundleDisplayName -string 'Doomsday Radio' "$plist"
           plutil -insert CFBundleIdentifier -string 'radio.doomsday.player' "$plist"
