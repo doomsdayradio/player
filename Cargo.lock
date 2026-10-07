@@ -612,6 +612,7 @@ dependencies = [
  "reqwest",
  "rodio",
  "rustfft",
+ "serde_json",
  "symphonia",
  "tokio",
  "winresource",

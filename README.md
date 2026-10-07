@@ -1,8 +1,19 @@
 # Doomsday Radio
 
 Ein kleiner nativer Player für [Doomsday Radio](https://doomsday.radio):
-Start/Stopp, Lautstärke, Stummschaltung und Audio-Visualizer.
+Start/Stopp, Lautstärke, Stummschaltung, Audio-Visualizer und aktueller Songtitel.
 Ohne Browser oder Installation der App.
+
+Songtitel kommen live aus dem [ntfy-Topic doomsday](https://ntfy.bot.omg.lol/doomsday).
+Für das geschützte Topic vor dem Start die Umgebungsvariable
+`NTFY_TOKEN` mit einem eigenen Token mit Leserecht setzen
+(`DOOMSDAY_NTFY_TOKEN` wird weiterhin unterstützt).
+Tokens werden nicht mit der App ausgeliefert oder in Dateien gespeichert.
+Die GitHub-Variablen `NTFY_URL` (Serveradresse, z. B. `https://ntfy.bot.omg.lol`)
+und `NTFY_TOPIC` (z. B. `doomsday`) setzen die Build-Standardwerte;
+gleichnamige lokale Umgebungsvariablen überschreiben sie.
+Das GitHub-Secret `NTFY_TOKEN` prüft nur den Lesezugriff in CI,
+es ersetzt keinen lokalen Token im heruntergeladenen Player.
 
 ![Oberfläche des Doomsday-Radio-Players](https://github.com/doomsdayradio/player/releases/latest/download/screenshot.png)
 

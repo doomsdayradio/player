@@ -4,11 +4,13 @@
 )]
 
 mod audio;
+mod now_playing;
 mod spectrum;
 
 use audio::{Player, Status};
 use eframe::egui::{self, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 use egui_phosphor::regular;
+use now_playing::NowPlaying;
 use spectrum::{Spectrum, BANDS};
 use std::time::{Duration, Instant};
 
@@ -57,6 +59,7 @@ fn main() -> eframe::Result {
 
 struct RadioApp {
     player: Player,
+    now_playing: NowPlaying,
     spectrum: Spectrum,
     logo: egui::TextureHandle,
     volume: f32,
@@ -102,6 +105,7 @@ impl RadioApp {
         context.egui_ctx.set_style(style);
         Self {
             player: Player::default(),
+            now_playing: NowPlaying::new(context.egui_ctx.clone()),
             spectrum: Spectrum::new(),
             logo,
             volume: 0.65,
@@ -278,6 +282,36 @@ impl eframe::App for RadioApp {
                         }
                     });
                 });
+                let title = self.now_playing.snapshot();
+                let text = title.message.as_deref().filter(|text| !text.is_empty());
+                let response = ui.add(
+                    egui::Label::new(
+                        RichText::new(text.unwrap_or(if title.error.is_some() {
+                            "Titel nicht verfügbar"
+                        } else {
+                            "Warte auf Titel …"
+                        }))
+                        .monospace()
+                        .size(13.0)
+                        .color(if title.error.is_some() {
+                            AMBER
+                        } else if text.is_some() {
+                            TEXT
+                        } else {
+                            MUTED
+                        }),
+                    )
+                    .truncate(),
+                );
+                let mut tooltip = text.unwrap_or("Noch keine Titelmeldung").to_owned();
+                if let Some(error) = title.error {
+                    tooltip.push('\n');
+                    tooltip.push_str(&error);
+                    if text.is_some() {
+                        tooltip.push_str("\nZuletzt empfangener Titel; Verbindung wird erneuert.");
+                    }
+                }
+                response.on_hover_text(tooltip);
                 ui.add_space(10.0);
                 self.visualizer(ui, (ui.available_height() - 116.0).max(28.0));
                 ui.horizontal(|ui| {

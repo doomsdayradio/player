@@ -15,6 +15,8 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_TOOLCHAIN: "1.99.0"
+  NTFY_URL: ${{ vars.NTFY_URL }}
+  NTFY_TOPIC: ${{ vars.NTFY_TOPIC }}
 
 jobs:
   windows:
@@ -46,6 +48,21 @@ jobs:
           cargo "+$env:RUST_TOOLCHAIN" test --locked
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo "+$env:RUST_TOOLCHAIN" clippy --locked --all-targets -- -D warnings
+          exit $LASTEXITCODE
+      - name: Verify ntfy read access
+        if: >-
+          github.event_name != 'pull_request' &&
+          (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) ||
+           startsWith(github.ref, 'refs/tags/v'))
+        shell: pwsh
+        env:
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NTFY_TOKEN)) {
+            Write-Output '::notice::NTFY_TOKEN is not configured; skipping live ntfy check.'
+            exit 0
+          }
+          cargo "+$env:RUST_TOOLCHAIN" test --locked now_playing::tests::live_ntfy_topic_is_readable -- --ignored --exact
           exit $LASTEXITCODE
       - name: Single EXE
         shell: pwsh
