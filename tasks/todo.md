@@ -30,6 +30,18 @@ die normalen Desktop-/Audiobibliotheken voraus; macOS-Builds sind unsigniert.
 - [ ] Mac-Build nach nachgereichter GitHub-Repository-Adresse ausführen (offen).
 - [ ] Debian-12-CI-Build und vollständige Linux-Desktop-/Audio-Prüfung (offen).
 
+## Signierte Release-Prüfsummen
+
+- [ ] Signierverfahren festlegen: GPG oder alternativ Sigstore mit GitHub-OIDC.
+- [ ] Bei GPG einen dedizierten Release-Signierschlüssel erstellen, Ablaufdatum festlegen und Backup sowie Widerruf vorbereiten.
+- [ ] Öffentlichen GPG-Schlüssel veröffentlichen und den Fingerprint über einen unabhängigen, vertrauenswürdigen Kanal bekanntgeben.
+- [ ] Privaten GPG-Signierschlüssel und gegebenenfalls die Passphrase direkt als geschützte GitHub Secrets hinterlegen; niemals ins Repository oder in den Chat übernehmen.
+- [ ] Signierung nur für vertrauenswürdige Release-Jobs freigeben; Pull Requests und Feature-Branches ausschließen.
+- [ ] Die endgültige `SHA256SUMS` nach sämtlichen Binary-Signierungen mit GPG signieren und `SHA256SUMS.asc` zusammen mit den Downloads veröffentlichen.
+- [ ] Bei aktivierter Prüfsummensignierung das Release bei fehlenden Secrets oder Signierfehlern blockieren; temporären Schlüsselbund nach Gebrauch entfernen.
+- [ ] Verifikation in `.github/SIGNING.md` dokumentieren: Fingerprint prüfen, Schlüssel importieren, Signatur prüfen und anschließend Datei-Prüfsummen vergleichen.
+- [ ] Positivtest mit echtem Release sowie Negativtests mit veränderten Prüfsummen, manipuliertem Download und falschem Schlüssel durchführen.
+
 ## Prüfhypothese
 
 Der bestätigte MP3-Livestream lässt sich ohne seekbare Datei mit Symphonia

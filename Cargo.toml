@@ -15,6 +15,10 @@ rustfft = "6.2"
 symphonia = { version = "0.5.4", default-features = false, features = ["mp3"] }
 tokio = { version = "1", features = ["rt", "time", "macros"] }
 
+[target.'cfg(windows)'.build-dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "ico"] }
+winresource = "0.1"
+
 [profile.release]
 opt-level = "s"
 lto = "thin"

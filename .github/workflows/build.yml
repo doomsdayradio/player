@@ -19,7 +19,12 @@ env:
 jobs:
   windows:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      signed: ${{ steps.verify-signature.outputs.signed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Rust toolchain
@@ -49,6 +54,67 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           Copy-Item target/release/doomsday-radio.exe dist/doomsday-radio-windows-x64.exe
+      - name: Check signing configuration
+        id: signing-config
+        shell: pwsh
+        env:
+          SIGNING_REQUIRED: ${{ vars.SIGNPATH_ENABLED == 'true' && github.event_name != 'pull_request' && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/v')) }}
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          SIGNPATH_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+        run: |
+          if ($env:SIGNING_REQUIRED -eq 'true') {
+            foreach ($name in @('SIGNPATH_API_TOKEN', 'SIGNPATH_ORGANIZATION_ID', 'SIGNPATH_PROJECT_SLUG', 'SIGNPATH_SIGNING_POLICY_SLUG', 'SIGNPATH_ARTIFACT_CONFIGURATION_SLUG')) {
+              if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+                throw "Missing signing configuration: $name"
+              }
+            }
+            'enabled=true' >> $env:GITHUB_OUTPUT
+          } else {
+            'enabled=false' >> $env:GITHUB_OUTPUT
+          }
+      - name: Upload EXE for signing
+        id: unsigned-exe
+        if: steps.signing-config.outputs.enabled == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: unsigned-windows-x64
+          path: dist/doomsday-radio-windows-x64.exe
+          if-no-files-found: error
+          retention-days: 1
+      - name: Request SignPath signature
+        if: steps.signing-config.outputs.enabled == 'true'
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.unsigned-exe.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed
+      - name: Verify Windows signature
+        id: verify-signature
+        shell: pwsh
+        env:
+          SIGNING_REQUIRED: ${{ steps.signing-config.outputs.enabled }}
+        run: |
+          if ($env:SIGNING_REQUIRED -eq 'true') {
+            $signedPath = 'signed/doomsday-radio-windows-x64.exe'
+            if (-not (Test-Path $signedPath)) { throw 'Signed EXE not returned by SignPath' }
+            $signature = Get-AuthenticodeSignature $signedPath
+            if ($signature.Status -ne 'Valid') { throw "Invalid Windows signature: $($signature.Status)" }
+            if ($null -eq $signature.TimeStamperCertificate) { throw 'Windows signature has no trusted timestamp' }
+            Copy-Item $signedPath dist/doomsday-radio-windows-x64.exe -Force
+            'signed=true' >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Output '::notice::Windows signing is disabled; this build contains an unsigned EXE.'
+            'signed=false' >> $env:GITHUB_OUTPUT
+          }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: doomsday-radio-windows-x64
@@ -87,7 +153,9 @@ jobs:
           printf '%s\n' "$linkage"
           if grep -E 'not found|undefined symbol' <<< "$linkage"; then exit 1; fi
           install -Dm755 target/release/doomsday-radio dist/doomsday-radio-linux-x64
-          tar -C dist -czf dist/doomsday-radio-linux-x64.tar.gz doomsday-radio-linux-x64
+          install -Dm644 assets/doomsday-radio.png dist/doomsday-radio.png
+          install -Dm755 packaging/linux/install-desktop.sh dist/install-desktop.sh
+          tar -C dist -czf dist/doomsday-radio-linux-x64.tar.gz doomsday-radio-linux-x64 doomsday-radio.png install-desktop.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: doomsday-radio-linux-x64
@@ -164,6 +232,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      WINDOWS_SIGNED: ${{ needs.windows.outputs.signed }}
     steps:
       - name: Download portable builds
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -179,14 +248,21 @@ jobs:
           test -s dist/doomsday-radio-linux-x64.tar.gz
           test -s dist/doomsday-radio-macos-universal.tar.gz
           test -s dist/screenshot.png
-          (cd dist && sha256sum *.exe *.tar.gz *.png > SHA256SUMS)
+          (cd dist && sha256sum -- *.exe *.tar.gz *.png > SHA256SUMS)
 
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             tag="$GITHUB_REF_NAME"
           else
             tag="build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
           fi
+          if [[ "$WINDOWS_SIGNED" == true ]]; then
+            windows_signing='Windows: Authenticode signed and timestamped via SignPath.'
+          else
+            windows_signing='Windows: unsigned; SmartScreen warnings may appear.'
+          fi
           notes="Portable builds for Windows x64, Linux x64 and macOS (Intel + Apple Silicon).
+
+          $windows_signing
 
           Extract the archives before running the player. Linux requires desktop/audio libraries. macOS is ad-hoc signed, not notarized; security warnings may appear.
 
@@ -194,6 +270,7 @@ jobs:
 
           if gh release view "$tag" > /dev/null 2>&1; then
             gh release upload "$tag" dist/* --clobber
+            gh release edit "$tag" --notes "$notes"
           else
             gh release create "$tag" dist/* \
               --target "$GITHUB_SHA" \
@@ -247,16 +324,39 @@ jobs:
           restore-keys: macos-${{ runner.arch }}-rust-${{ env.RUST_TOOLCHAIN }}-
       - name: Native tests
         run: cargo "+$RUST_TOOLCHAIN" test --locked --release
-      - name: Single universal macOS executable
+      - name: Universal macOS app with icon
         run: |
           cargo "+$RUST_TOOLCHAIN" build --locked --release --target aarch64-apple-darwin
           cargo "+$RUST_TOOLCHAIN" build --locked --release --target x86_64-apple-darwin
-          mkdir -p dist
-          lipo -create target/aarch64-apple-darwin/release/doomsday-radio target/x86_64-apple-darwin/release/doomsday-radio -output dist/doomsday-radio-macos
-          codesign --force --sign - dist/doomsday-radio-macos
-          lipo -info dist/doomsday-radio-macos
-          codesign --verify --verbose dist/doomsday-radio-macos
-          tar -C dist -czf dist/doomsday-radio-macos-universal.tar.gz doomsday-radio-macos
+          app='dist/Doomsday Radio.app'
+          iconset='dist/doomsday-radio.iconset'
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$iconset"
+          lipo -create target/aarch64-apple-darwin/release/doomsday-radio target/x86_64-apple-darwin/release/doomsday-radio -output "$app/Contents/MacOS/doomsday-radio"
+          for size in 16 32 128 256 512; do
+            sips -z "$size" "$size" assets/doomsday-radio.png --out "$iconset/icon_${size}x${size}.png" > /dev/null
+            double_size=$((size * 2))
+            sips -z "$double_size" "$double_size" assets/doomsday-radio.png --out "$iconset/icon_${size}x${size}@2x.png" > /dev/null
+          done
+          iconutil -c icns "$iconset" -o "$app/Contents/Resources/doomsday-radio.icns"
+          version="$(cargo "+$RUST_TOOLCHAIN" metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "doomsday-radio") | .version')"
+          plist="$app/Contents/Info.plist"
+          plutil -create xml "$plist"
+          plutil -insert CFBundleName -string 'Doomsday Radio' "$plist"
+          plutil -insert CFBundleDisplayName -string 'Doomsday Radio' "$plist"
+          plutil -insert CFBundleIdentifier -string 'radio.doomsday.player' "$plist"
+          plutil -insert CFBundlePackageType -string APPL "$plist"
+          plutil -insert CFBundleExecutable -string doomsday-radio "$plist"
+          plutil -insert CFBundleIconFile -string doomsday-radio.icns "$plist"
+          plutil -insert CFBundleVersion -string "$version" "$plist"
+          plutil -insert CFBundleShortVersionString -string "$version" "$plist"
+          plutil -insert LSMinimumSystemVersion -string "$MACOSX_DEPLOYMENT_TARGET" "$plist"
+          plutil -insert NSHighResolutionCapable -bool true "$plist"
+          plutil -lint "$plist"
+          codesign --force --sign - "$app"
+          lipo -info "$app/Contents/MacOS/doomsday-radio"
+          codesign --verify --deep --strict --verbose "$app"
+          test -s "$app/Contents/Resources/doomsday-radio.icns"
+          tar -C dist -czf dist/doomsday-radio-macos-universal.tar.gz 'Doomsday Radio.app'
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: doomsday-radio-macos-universal

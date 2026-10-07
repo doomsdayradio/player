@@ -14,8 +14,11 @@ Jeder erfolgreiche Build auf dem Hauptbranch veröffentlicht automatisch ein
 Release mit `build-…`-Tag; Versions-Tags wie `v0.1.0` werden ebenfalls veröffentlicht.
 
 Windows und Linux: x64. macOS: Intel und Apple Silicon.
-Archive entpacken und die ausführbare Datei starten.
+Archive entpacken. Unter Windows die EXE, unter macOS `Doomsday Radio.app` starten.
+Unter Linux `./doomsday-radio-linux-x64` starten; optional mit
+`bash install-desktop.sh` einen Menüeintrag mit Icon für den aktuellen Benutzer anlegen.
 Nicht signierte Downloads können Sicherheitswarnungen auslösen.
+Einrichtung und Status der [Release-Signierung](.github/SIGNING.md).
 
 ## Selbst kompilieren
 
