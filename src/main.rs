@@ -6,13 +6,19 @@
 mod audio;
 mod now_playing;
 mod spectrum;
+mod updates;
 
 use audio::{Player, Status};
 use eframe::egui::{self, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 use egui_phosphor::regular;
 use now_playing::NowPlaying;
 use spectrum::{Spectrum, BANDS};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::{Duration, Instant};
+use updates::{State as UpdateState, Updater};
 
 const BACKGROUND: Color32 = Color32::from_rgb(43, 33, 24);
 const SURFACE: Color32 = Color32::from_rgb(28, 20, 16);
@@ -28,6 +34,9 @@ const LOGO: &[u8] = include_bytes!("../assets/doomsday-radio.png");
 const RADIO_FONT: &[u8] = include_bytes!("../assets/ShareTechMono-Regular.ttf");
 
 fn main() -> eframe::Result {
+    let restart = Arc::new(AtomicBool::new(false));
+    let restart_path = std::env::current_exe().ok();
+    let app_restart = restart.clone();
     let logo = image::load_from_memory(LOGO)
         .expect("Embedded station logo must be a valid PNG")
         .into_rgba8();
@@ -40,7 +49,8 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_title("Doomsday Radio")
             .with_inner_size([440.0, 400.0])
-            .with_min_inner_size([360.0, 360.0])
+            .with_resizable(false)
+            .with_maximize_button(false)
             .with_icon(egui::IconData {
                 rgba: icon.into_raw(),
                 width: 32,
@@ -53,13 +63,22 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "Doomsday Radio",
         options,
-        Box::new(move |context| Ok(Box::new(RadioApp::new(context, logo)))),
-    )
+        Box::new(move |context| Ok(Box::new(RadioApp::new(context, logo, app_restart)))),
+    )?;
+    if restart.load(Ordering::SeqCst) {
+        if let Some(path) = restart_path {
+            std::process::Command::new(path)
+                .spawn()
+                .map_err(|error| eframe::Error::AppCreation(Box::new(error)))?;
+        }
+    }
+    Ok(())
 }
 
 struct RadioApp {
     player: Player,
     now_playing: NowPlaying,
+    updater: Updater,
     spectrum: Spectrum,
     logo: egui::TextureHandle,
     volume: f32,
@@ -69,7 +88,11 @@ struct RadioApp {
 }
 
 impl RadioApp {
-    fn new(context: &eframe::CreationContext<'_>, logo: egui::ColorImage) -> Self {
+    fn new(
+        context: &eframe::CreationContext<'_>,
+        logo: egui::ColorImage,
+        restart: Arc<AtomicBool>,
+    ) -> Self {
         let mut fonts = egui::FontDefinitions::default();
         fonts.font_data.insert(
             "radio-mono".into(),
@@ -88,24 +111,32 @@ impl RadioApp {
             context
                 .egui_ctx
                 .load_texture("doomsday-logo", logo, egui::TextureOptions::LINEAR);
+        context.egui_ctx.set_theme(egui::ThemePreference::Dark);
         let mut style = (*context.egui_ctx.style()).clone();
         style.visuals = egui::Visuals::dark();
         style.visuals.panel_fill = BACKGROUND;
+        style.visuals.window_fill = SURFACE;
+        style.visuals.window_stroke = Stroke::new(1.0_f32, LINE);
+        style.visuals.hyperlink_color = GLOW;
         style.visuals.override_text_color = Some(TEXT);
         style.visuals.selection.bg_fill = AMBER;
         style.visuals.widgets.inactive.bg_fill = SURFACE;
+        style.visuals.widgets.inactive.weak_bg_fill = SURFACE;
         style.visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, LINE);
         style.visuals.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, MUTED);
         style.visuals.widgets.hovered.bg_fill = Color32::from_rgb(63, 44, 28);
+        style.visuals.widgets.hovered.weak_bg_fill = style.visuals.widgets.hovered.bg_fill;
         style.visuals.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, AMBER);
         style.visuals.widgets.hovered.fg_stroke = Stroke::new(1.0_f32, GLOW);
         style.visuals.widgets.active.bg_fill = Color32::from_rgb(78, 58, 43);
+        style.visuals.widgets.active.weak_bg_fill = style.visuals.widgets.active.bg_fill;
         style.visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, AMBER);
         style.spacing.item_spacing = Vec2::new(10.0, 6.0);
         context.egui_ctx.set_style(style);
         Self {
             player: Player::default(),
             now_playing: NowPlaying::new(context.egui_ctx.clone()),
+            updater: Updater::new(context.egui_ctx.clone(), restart),
             spectrum: Spectrum::new(),
             logo,
             volume: 0.65,
@@ -124,6 +155,114 @@ impl RadioApp {
                 .start(if self.muted { 0.0 } else { self.volume });
             self.started = Some(Instant::now());
         }
+    }
+
+    fn visible_title(snapshot: &now_playing::Snapshot) -> Option<&str> {
+        if snapshot.error.is_some() {
+            None
+        } else {
+            snapshot
+                .message
+                .as_deref()
+                .filter(|text| !text.trim().is_empty())
+        }
+    }
+
+    fn update_menu_visible(state: &UpdateState) -> bool {
+        !matches!(state, UpdateState::Checking | UpdateState::Error(_))
+    }
+
+    fn update_menu(&self, ui: &mut egui::Ui) {
+        let state = self.updater.state();
+        if !Self::update_menu_visible(&state) {
+            return;
+        }
+        let color = match &state {
+            UpdateState::Available(_) => SIGNAL,
+            UpdateState::Error(_) => AMBER,
+            _ => MUTED,
+        };
+        let tooltip = match &state {
+            UpdateState::Available(release) => format!("Update verfügbar: {}", release.tag),
+            _ => "Updates".to_owned(),
+        };
+        ui.menu_button(
+            RichText::new(regular::ARROWS_CLOCKWISE)
+                .size(16.0)
+                .color(color),
+            |ui| {
+                ui.set_max_width(280.0);
+                ui.label(format!(
+                    "Version {} ({})",
+                    env!("CARGO_PKG_VERSION"),
+                    updates::BUILD_TAG
+                ));
+                ui.separator();
+                match &state {
+                    UpdateState::Checking => {
+                        ui.label("Prüfe auf Updates …");
+                    }
+                    UpdateState::Current => {
+                        ui.label("Kein neueres Release verfügbar");
+                    }
+                    UpdateState::Available(release) => {
+                        ui.label(RichText::new(&release.tag).color(SIGNAL));
+                        if updates::CAN_INSTALL {
+                            if ui
+                                .button(format!(
+                                    "{} Herunterladen & neu starten",
+                                    regular::DOWNLOAD_SIMPLE
+                                ))
+                                .clicked()
+                            {
+                                self.updater.install(release.clone());
+                                ui.close_menu();
+                            }
+                        } else if ui
+                            .button(format!(
+                                "{} Release herunterladen",
+                                regular::DOWNLOAD_SIMPLE
+                            ))
+                            .clicked()
+                        {
+                            ui.ctx()
+                                .open_url(egui::OpenUrl::new_tab(release.url(&release.asset)));
+                        }
+                    }
+                    UpdateState::Downloading { received, total } => {
+                        ui.add(
+                            egui::ProgressBar::new(*received as f32 / (*total).max(1) as f32)
+                                .show_percentage(),
+                        );
+                        ui.label("Update wird heruntergeladen");
+                    }
+                    UpdateState::Installing => {
+                        ui.label("Update wird installiert …");
+                    }
+                    UpdateState::Restarting => {
+                        ui.label("Player startet neu …");
+                    }
+                    UpdateState::Error(error) => {
+                        ui.label(RichText::new(error).color(AMBER));
+                    }
+                }
+                if ui
+                    .add_enabled(
+                        !state.busy(),
+                        egui::Button::new(format!(
+                            "{} Auf Updates prüfen",
+                            regular::ARROWS_CLOCKWISE
+                        )),
+                    )
+                    .clicked()
+                {
+                    self.updater.check();
+                }
+                ui.hyperlink_to("GitHub Releases", updates::RELEASES_URL);
+            },
+        )
+        .response
+        .on_hover_text(tooltip);
     }
 
     fn visualizer(&self, ui: &mut egui::Ui, height: f32) {
@@ -177,19 +316,23 @@ impl RadioApp {
     }
 
     fn station_header(&self, ui: &mut egui::Ui) {
+        let height = (ui.available_height() - 200.0).clamp(120.0, 144.0);
         let (rect, _) =
-            ui.allocate_exact_size(Vec2::new(ui.available_width(), 144.0), Sense::hover());
+            ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover());
         let painter = ui.painter_at(rect);
         let center = rect.center();
         for tick in 0..48 {
             let angle = std::f32::consts::TAU * tick as f32 / 48.0;
             let direction = Vec2::new(angle.cos(), angle.sin());
             painter.line_segment(
-                [center + direction * 68.0, center + direction * 72.0],
+                [
+                    center + direction * (height / 2.0 - 4.0),
+                    center + direction * (height / 2.0),
+                ],
                 Stroke::new(1.0_f32, LINE),
             );
         }
-        let image_height = 140.0;
+        let image_height = height - 4.0;
         let image_width = image_height * self.logo.size()[0] as f32 / self.logo.size()[1] as f32;
         let image_rect = Rect::from_center_size(center, Vec2::new(image_width, image_height));
         let response = ui.put(
@@ -283,35 +426,13 @@ impl eframe::App for RadioApp {
                     });
                 });
                 let title = self.now_playing.snapshot();
-                let text = title.message.as_deref().filter(|text| !text.is_empty());
-                let response = ui.add(
-                    egui::Label::new(
-                        RichText::new(text.unwrap_or(if title.error.is_some() {
-                            "Titel nicht verfügbar"
-                        } else {
-                            "Warte auf Titel …"
-                        }))
-                        .monospace()
-                        .size(13.0)
-                        .color(if title.error.is_some() {
-                            AMBER
-                        } else if text.is_some() {
-                            TEXT
-                        } else {
-                            MUTED
-                        }),
+                if let Some(text) = Self::visible_title(&title) {
+                    ui.add(
+                        egui::Label::new(RichText::new(text).monospace().size(13.0).color(TEXT))
+                            .truncate(),
                     )
-                    .truncate(),
-                );
-                let mut tooltip = text.unwrap_or("Noch keine Titelmeldung").to_owned();
-                if let Some(error) = title.error {
-                    tooltip.push('\n');
-                    tooltip.push_str(&error);
-                    if text.is_some() {
-                        tooltip.push_str("\nZuletzt empfangener Titel; Verbindung wird erneuert.");
-                    }
+                    .on_hover_text(text);
                 }
-                response.on_hover_text(tooltip);
                 ui.add_space(10.0);
                 self.visualizer(ui, (ui.available_height() - 116.0).max(28.0));
                 ui.horizontal(|ui| {
@@ -398,6 +519,7 @@ impl eframe::App for RadioApp {
                             .size(10.0)
                             .color(MUTED),
                         );
+                        self.update_menu(ui);
                     });
                 });
             });
@@ -415,6 +537,44 @@ impl eframe::App for RadioApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unavailable_titles_are_hidden_even_with_a_cached_message() {
+        let mut snapshot = now_playing::Snapshot::default();
+        assert_eq!(RadioApp::visible_title(&snapshot), None);
+        snapshot.message = Some("Artist - Song".into());
+        assert_eq!(RadioApp::visible_title(&snapshot), Some("Artist - Song"));
+        snapshot.error = Some("Connection failed".into());
+        assert_eq!(RadioApp::visible_title(&snapshot), None);
+        snapshot.error = None;
+        assert_eq!(RadioApp::visible_title(&snapshot), Some("Artist - Song"));
+        snapshot.message = Some(" \n ".into());
+        assert_eq!(RadioApp::visible_title(&snapshot), None);
+    }
+
+    #[test]
+    fn unavailable_update_checks_hide_the_menu() {
+        assert!(!RadioApp::update_menu_visible(&UpdateState::Checking));
+        assert!(!RadioApp::update_menu_visible(&UpdateState::Error(
+            "Offline".into()
+        )));
+        for state in [
+            UpdateState::Current,
+            UpdateState::Available(updates::Release {
+                tag: "build-10-1".into(),
+                asset: "doomsday-radio-windows-x64.exe".into(),
+                size: 100,
+            }),
+            UpdateState::Downloading {
+                received: 0,
+                total: 100,
+            },
+            UpdateState::Installing,
+            UpdateState::Restarting,
+        ] {
+            assert!(RadioApp::update_menu_visible(&state));
+        }
+    }
 
     #[test]
     fn embedded_station_logo_is_small_and_nonblank() {

@@ -17,6 +17,7 @@ env:
   RUST_TOOLCHAIN: "1.99.0"
   NTFY_URL: ${{ vars.NTFY_URL }}
   NTFY_TOPIC: ${{ vars.NTFY_TOPIC }}
+  DOOMSDAY_BUILD_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('build-{0}-{1}', github.run_number, github.run_attempt) }}
 
 jobs:
   windows:
