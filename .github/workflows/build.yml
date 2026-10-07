@@ -21,11 +21,11 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Rust toolchain
         run: rustup toolchain install $env:RUST_TOOLCHAIN --profile minimal --component rustfmt --component clippy
       - name: Cargo cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: |
             ~/.cargo/registry
@@ -49,7 +49,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           Copy-Item target/release/doomsday-radio.exe dist/doomsday-radio-windows-x64.exe
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: doomsday-radio-windows-x64
           path: dist/doomsday-radio-windows-x64.exe
@@ -68,9 +68,9 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends libasound2-dev libx11-dev libxi-dev libxrandr-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev pkg-config
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Cargo cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: |
             /usr/local/cargo/registry
@@ -88,7 +88,7 @@ jobs:
           if grep -E 'not found|undefined symbol' <<< "$linkage"; then exit 1; fi
           install -Dm755 target/release/doomsday-radio dist/doomsday-radio-linux-x64
           tar -C dist -czf dist/doomsday-radio-linux-x64.tar.gz doomsday-radio-linux-x64
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: doomsday-radio-linux-x64
           path: dist/doomsday-radio-linux-x64.tar.gz
@@ -105,9 +105,9 @@ jobs:
       - name: Virtual desktop and runtime libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb xauth xdotool imagemagick libasound2t64 libgl1 libegl1 libgl1-mesa-dri libxkbcommon0 libx11-6 libxi6 libxrandr2 libwayland-client0 libwayland-cursor0 libwayland-egl1
+          sudo apt-get install -y --no-install-recommends xvfb xauth xdotool imagemagick libasound2t64 libgl1 libegl1 libgl1-mesa-dri libxkbcommon0 libxkbcommon-x11-0 libx11-6 libxi6 libxrandr2 libwayland-client0 libwayland-cursor0 libwayland-egl1
       - name: Download Linux build
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: doomsday-radio-linux-x64
           path: dist
@@ -143,7 +143,7 @@ jobs:
           exit 1
           CAPTURE
       - name: Upload screenshot
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: doomsday-radio-screenshot
           path: dist/screenshot.png
@@ -166,7 +166,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       - name: Download portable builds
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           pattern: doomsday-radio-*
           merge-multiple: true
@@ -215,7 +215,7 @@ jobs:
     steps:
       - name: Desktop runtime libraries
         run: dnf install -y --setopt=install_weak_deps=False alsa-lib libX11 libXi libXrandr libxkbcommon libwayland-client libwayland-cursor libwayland-egl mesa-libGL mesa-libEGL tar
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: doomsday-radio-linux-x64
           path: dist
@@ -233,11 +233,11 @@ jobs:
     env:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Rust toolchain
         run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --target aarch64-apple-darwin --target x86_64-apple-darwin
       - name: Cargo cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: |
             ~/.cargo/registry
@@ -257,7 +257,7 @@ jobs:
           lipo -info dist/doomsday-radio-macos
           codesign --verify --verbose dist/doomsday-radio-macos
           tar -C dist -czf dist/doomsday-radio-macos-universal.tar.gz doomsday-radio-macos
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: doomsday-radio-macos-universal
           path: dist/doomsday-radio-macos-universal.tar.gz
