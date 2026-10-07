@@ -4,12 +4,14 @@ Ein kleiner nativer Player für [Doomsday Radio](https://doomsday.radio):
 Start/Stopp, Lautstärke, Stummschaltung und Audio-Visualizer.
 Ohne Browser oder Installation der App.
 
+![Oberfläche des Doomsday-Radio-Players](https://github.com/doomsdayradio/player/releases/latest/download/screenshot.png)
+
 ## Downloads
 
-[GitHub Releases](https://github.com/doomsdayradio/player/releases)
-für veröffentlichte Versionen.
-Bis dahin: [Actions-Builds](https://github.com/doomsdayradio/player/actions/workflows/build.yml),
-einen erfolgreichen Lauf öffnen und unter **Artifacts** herunterladen.
+[Neueste Downloads](https://github.com/doomsdayradio/player/releases/latest)
+für Windows, Linux und macOS.
+Jeder erfolgreiche Build auf dem Hauptbranch veröffentlicht automatisch ein
+Release mit `build-…`-Tag; Versions-Tags wie `v0.1.0` werden ebenfalls veröffentlicht.
 
 Windows und Linux: x64. macOS: Intel und Apple Silicon.
 Archive entpacken und die ausführbare Datei starten.

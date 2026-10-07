@@ -96,6 +96,113 @@ jobs:
           retention-days: 30
           compression-level: 0
 
+  screenshot:
+    name: Capture player interface
+    needs: debian
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Virtual desktop and runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth xdotool imagemagick libasound2t64 libgl1 libegl1 libgl1-mesa-dri libxkbcommon0 libx11-6 libxi6 libxrandr2 libwayland-client0 libwayland-cursor0 libwayland-egl1
+      - name: Download Linux build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: doomsday-radio-linux-x64
+          path: dist
+      - name: Capture rendered window
+        shell: bash
+        env:
+          WINIT_UNIX_BACKEND: x11
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          set -euo pipefail
+          tar -C dist -xzf dist/doomsday-radio-linux-x64.tar.gz
+          xvfb-run -a -s '-screen 0 1024x768x24' bash <<'CAPTURE'
+          set -euo pipefail
+          unset WAYLAND_DISPLAY
+          export XDG_RUNTIME_DIR
+          XDG_RUNTIME_DIR="$(mktemp -d)"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          ./dist/doomsday-radio-linux-x64 > "$XDG_RUNTIME_DIR/player.log" 2>&1 &
+          player_pid=$!
+          trap 'kill "$player_pid" 2>/dev/null || true; cat "$XDG_RUNTIME_DIR/player.log"; rm -rf "$XDG_RUNTIME_DIR"' EXIT
+          window_id="$(timeout 30s xdotool search --sync --onlyvisible --name '^Doomsday Radio$' | head -n 1)"
+          deadline=$((SECONDS + 30))
+          while (( SECONDS < deadline )); do
+            kill -0 "$player_pid"
+            timeout 5s import -window "$window_id" dist/screenshot.png
+            read -r width height colors <<< "$(identify -format '%w %h %k' dist/screenshot.png)"
+            if (( width >= 360 && height >= 360 && colors > 64 )); then
+              identify dist/screenshot.png
+              exit 0
+            fi
+          done
+          echo 'Player window did not render a valid screenshot' >&2
+          exit 1
+          CAPTURE
+      - name: Upload screenshot
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: doomsday-radio-screenshot
+          path: dist/screenshot.png
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publish GitHub release
+    needs: [windows, debian, fedora, macos, screenshot]
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) ||
+       startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Download portable builds
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: doomsday-radio-*
+          merge-multiple: true
+          path: dist
+      - name: Publish executables and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/doomsday-radio-windows-x64.exe
+          test -s dist/doomsday-radio-linux-x64.tar.gz
+          test -s dist/doomsday-radio-macos-universal.tar.gz
+          test -s dist/screenshot.png
+          (cd dist && sha256sum *.exe *.tar.gz *.png > SHA256SUMS)
+
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          fi
+          notes="Portable builds for Windows x64, Linux x64 and macOS (Intel + Apple Silicon).
+
+          Extract the archives before running the player. Linux requires desktop/audio libraries. macOS is ad-hoc signed, not notarized; security warnings may appear.
+
+          Commit: $GITHUB_SHA"
+
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* \
+              --target "$GITHUB_SHA" \
+              --title "Doomsday Radio $tag" \
+              --notes "$notes" \
+              --draft
+          fi
+          gh release edit "$tag" --draft=false --latest
+
   fedora:
     name: Fedora library compatibility
     needs: debian
