@@ -20,6 +20,31 @@ env:
   DOOMSDAY_BUILD_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('build-{0}-{1}', github.run_number, github.run_attempt) }}
 
 jobs:
+  notify-start:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Notify workflow start
+        continue-on-error: true
+        shell: bash
+        env:
+          NTFY_DOOMSDAY_BUILDS: ${{ secrets.NTFY_DOOMSDAY_BUILDS }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NTFY_DOOMSDAY_BUILDS:-}" ]; then
+            echo "NTFY_DOOMSDAY_BUILDS fehlt; Build-Benachrichtigung übersprungen."
+            exit 0
+          fi
+          repo="${GITHUB_REPOSITORY#*/}"
+          timestamp="$(TZ=Europe/Berlin date '+%Y-%m-%d %H:%M:%S %Z')"
+          message="${repo} | ${timestamp} | START | ${GITHUB_WORKFLOW} | Event: ${GITHUB_EVENT_NAME} | Branch: ${GITHUB_REF_NAME} | Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          curl --fail --silent --show-error --output /dev/null \
+            --connect-timeout 5 --max-time 20 \
+            -H "Authorization: Bearer ${NTFY_DOOMSDAY_BUILDS}" \
+            -H "Title: ${repo} | START | ${GITHUB_WORKFLOW}" \
+            --data-binary "$message" \
+            https://ntfy.bot.omg.lol/doomsday-github-action
+
   windows:
     runs-on: windows-latest
     timeout-minutes: 90
@@ -385,3 +410,40 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
+
+  notify-finish:
+    if: ${{ always() }}
+    needs:
+      - notify-start
+      - windows
+      - debian
+      - screenshot
+      - release
+      - fedora
+      - macos
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Notify workflow result
+        continue-on-error: true
+        shell: bash
+        env:
+          NTFY_DOOMSDAY_BUILDS: ${{ secrets.NTFY_DOOMSDAY_BUILDS }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NTFY_DOOMSDAY_BUILDS:-}" ]; then
+            echo "NTFY_DOOMSDAY_BUILDS fehlt; Build-Benachrichtigung übersprungen."
+            exit 0
+          fi
+          repo="${GITHUB_REPOSITORY#*/}"
+          timestamp="$(TZ=Europe/Berlin date '+%Y-%m-%d %H:%M:%S %Z')"
+          result="$(jq -r '[to_entries[] | select(.key != "notify-start") | .value.result] | if index("failure") then "failure" elif index("cancelled") then "cancelled" elif index("success") then "success" else "skipped" end' <<< "$NEEDS_JSON")"
+          details="$(jq -r '[to_entries[] | select(.key != "notify-start") | "\(.key): \(.value.result)"] | join(", ")' <<< "$NEEDS_JSON")"
+          message="${repo} | ${timestamp} | ENDE: ${result} | ${GITHUB_WORKFLOW} | Jobs: ${details} | Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          curl --fail --silent --show-error --output /dev/null \
+            --connect-timeout 5 --max-time 20 \
+            -H "Authorization: Bearer ${NTFY_DOOMSDAY_BUILDS}" \
+            -H "Title: ${repo} | ENDE: ${result} | ${GITHUB_WORKFLOW}" \
+            --data-binary "$message" \
+            https://ntfy.bot.omg.lol/doomsday-github-action
