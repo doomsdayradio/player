@@ -1,5 +1,20 @@
 # Doomsday Radio
 
+## Die Doomsday-Welt
+
+**Doomsday Radio ist eine Sendestation aus dem Jahr 2222** — Radio, Geschichten
+und Signale aus einer Zukunft, die noch verhindert werden kann. Ein unabhängiges
+Online-Radio als zusammenhängende Welt: automatisierte Sendungen, Musik,
+Hörspiele, Spiele und Werkzeuge. Jede Komponente ist ein eigener Sender im
+Netzwerk — dieser Service ist einer davon.
+
+```text
+SOURCE MATERIAL  --->  PRODUCTION  --->  TRANSMISSION  --->  YOU
+      lore            services          radio/CDN         [::]
+```
+
+`NO SIGNAL IS EVER TRULY LOST // EST. 2222`
+
 Ein kleiner Player für [Doomsday Radio](https://doomsday.radio).
 
 ![Oberfläche des Doomsday-Radio-Players](https://github.com/doomsdayradio/player/releases/latest/download/screenshot.png)
